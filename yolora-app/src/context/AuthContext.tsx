@@ -7,6 +7,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, UserRole, DisabilityType, AuthResponse } from '../types';
 import { apiLogin, apiRegister, setAuthToken } from '../services/api';
 import { connectSocket, disconnectSocket } from '../services/socket';
+import {
+  initializeFirebase,
+  loginWithFirebase,
+  registerWithFirebase,
+  signOutFirebase,
+} from '../services/firebase';
 
 interface AuthContextType {
   user: User | null;
@@ -49,6 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Load persisted auth on mount
   useEffect(() => {
+    initializeFirebase();
+
     const loadAuth = async () => {
       try {
         const storedUser = await AsyncStorage.getItem(STORAGE_KEY_USER);
@@ -85,6 +93,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     setIsLoading(true);
     try {
+      await loginWithFirebase(email, password);
       const response = await apiLogin(email, password);
       await handleAuthSuccess(response);
     } catch (e: any) {
@@ -106,7 +115,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
     setIsLoading(true);
     try {
-      const response = await apiRegister(email, password, displayName, role, disabilityType);
+      const firebaseSession = await registerWithFirebase(email, password);
+      const response = await apiRegister(
+        email,
+        password,
+        displayName,
+        role,
+        disabilityType,
+        firebaseSession?.uid,
+      );
       await handleAuthSuccess(response);
     } catch (e: any) {
       const msg = e.message || 'Registration failed';
@@ -122,6 +139,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null);
     setAuthToken(null);
     disconnectSocket();
+    await signOutFirebase();
     await AsyncStorage.multiRemove([STORAGE_KEY_USER, STORAGE_KEY_TOKEN]);
   }, []);
 

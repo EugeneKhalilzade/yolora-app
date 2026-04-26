@@ -23,4 +23,8 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   fcmToken?: string;
+
+  @IsOptional()
+  @IsString()
+  firebaseUid?: string;
 }

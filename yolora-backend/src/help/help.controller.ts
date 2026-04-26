@@ -44,8 +44,8 @@ export class HelpController {
   }
 
   @Post('reject/:id')
-  async rejectRequest(@Param('id') requestId: string) {
-    return this.helpService.rejectRequest(requestId);
+  async rejectRequest(@Request() req, @Param('id') requestId: string) {
+    return this.helpService.rejectRequest(requestId, req.user.id);
   }
 
   @Post('complete/:id')

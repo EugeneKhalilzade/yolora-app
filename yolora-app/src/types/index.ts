@@ -47,6 +47,7 @@ export interface NearbyUser {
   displayName: string;
   email: string;
   role: UserRole;
+  disabilityType?: DisabilityType | null;
   latitude: number;
   longitude: number;
   isOnline: boolean;
@@ -74,6 +75,11 @@ export interface HelpRequestCreated {
   helpRequest: HelpRequest;
   nearbyHelpers: NearbyUser[];
   nearbyCount: number;
+  notifications?: {
+    enabled: boolean;
+    attempted: number;
+    sent: number;
+  };
 }
 
 export interface IncomingHelpRequest {
@@ -94,6 +100,20 @@ export interface AcceptedRequest {
   helperLongitude: number;
 }
 
+export interface NearbyHelpRequest {
+  id: string;
+  requester: {
+    id: string;
+    displayName: string;
+    disabilityType: DisabilityType | null;
+  };
+  latitude: number;
+  longitude: number;
+  description: string | null;
+  createdAt: string;
+  distance: number;
+}
+
 // Voice command types
 export interface VoiceCommand {
   keywords: string[];
@@ -108,14 +128,34 @@ export type AuthStackParamList = {
   Onboarding: undefined;
 };
 
+export type DisabledTabParamList = {
+  HomeTab: undefined;
+  MapTab: undefined;
+  RequestHelpTab: undefined;
+  ChatTab: undefined;
+  ProfileTab: undefined;
+};
+
 export type DisabledStackParamList = {
-  DisabledHome: undefined;
-  RequestHelp: undefined;
+  DisabledTabs: undefined;
   Tracking: { requestId: string };
 };
 
+export type AbleTabParamList = {
+  HomeTab: undefined;
+  MapTab: undefined;
+  RequestsTab: undefined;
+  ChatTab: undefined;
+  ProfileTab: undefined;
+};
+
 export type AbleStackParamList = {
-  AbleHome: undefined;
-  HelpRequests: undefined;
-  Navigate: { requestId: string; requesterLatitude: number; requesterLongitude: number };
+  AbleTabs: undefined;
+  Navigate: {
+    requestId: string;
+    requesterId: string;
+    requesterName: string;
+    requesterLatitude: number;
+    requesterLongitude: number;
+  };
 };

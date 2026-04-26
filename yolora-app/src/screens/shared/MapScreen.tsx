@@ -1,49 +1,102 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { View, StyleSheet, Text, SafeAreaView } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { ThemeContext } from '../../context/ThemeContext';
 import { AuthContext } from '../../context/AuthContext';
-import { UserRole } from '../../types';
-import Geolocation from 'react-native-geolocation-service';
+import { SocketContext } from '../../context/SocketContext';
+import { useLocation } from '../../hooks/useLocation';
+import { apiGetActiveRequest, apiGetNearbyUsers, apiUpdateLocation } from '../../services/api';
+import { HelpRequest, HelpRequestStatus, NearbyUser, UserRole } from '../../types';
 import { Typography } from '../../theme/typography';
-import { Spacing } from '../../theme/spacing';
 
 Mapbox.setAccessToken('YOUR_PUBLIC_MAPBOX_TOKEN');
 
 export const MapScreen = () => {
   const { colors } = useContext(ThemeContext);
   const { user } = useContext(AuthContext);
-  const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+  const { helperLocation, userLocations, sendLocationUpdate } = useContext(SocketContext);
+  const { location } = useLocation(true);
+  const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
+  const [activeRequest, setActiveRequest] = useState<HelpRequest | null>(null);
 
   useEffect(() => {
-    // Get current location
-    Geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-      },
-      (error) => {
-        console.log(error.code, error.message);
-        // Fallback to a default location (e.g., Baku, Azerbaijan)
-        setLocation({ latitude: 40.4093, longitude: 49.8671 });
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  }, []);
+    if (!location || !user) {
+      return;
+    }
 
-  // Mock nearby users
-  const nearbyUsers = location ? [
-    { id: '1', latitude: location.latitude + 0.002, longitude: location.longitude + 0.002, role: UserRole.DISABLED },
-    { id: '2', latitude: location.latitude - 0.003, longitude: location.longitude + 0.001, role: UserRole.ABLE },
-    { id: '3', latitude: location.latitude + 0.001, longitude: location.longitude - 0.004, role: UserRole.ABLE },
-  ] : [];
+    const syncMapData = async () => {
+      await apiUpdateLocation(location.latitude, location.longitude);
+      sendLocationUpdate(location);
+
+      const nearby = await apiGetNearbyUsers(
+        location.latitude,
+        location.longitude,
+        1000,
+        user.role === UserRole.DISABLED ? UserRole.ABLE : UserRole.DISABLED,
+      );
+      setNearbyUsers(nearby);
+
+      const currentActiveRequest = await apiGetActiveRequest();
+      setActiveRequest(currentActiveRequest);
+    };
+
+    syncMapData().catch((error) => {
+      console.warn('Failed to sync map data:', error);
+    });
+  }, [location, sendLocationUpdate, user]);
+
+  useEffect(() => {
+    if (!Object.keys(userLocations).length) {
+      return;
+    }
+
+    setNearbyUsers((prev) =>
+      prev.map((nearbyUser) => {
+        const liveLocation = userLocations[nearbyUser.id];
+        if (!liveLocation) {
+          return nearbyUser;
+        }
+        return {
+          ...nearbyUser,
+          latitude: liveLocation.latitude,
+          longitude: liveLocation.longitude,
+        };
+      }),
+    );
+  }, [userLocations]);
+
+  const routeLine = useMemo(() => {
+    if (!location) {
+      return null;
+    }
+
+    if (user?.role === UserRole.DISABLED && helperLocation) {
+      return [
+        [location.longitude, location.latitude],
+        [helperLocation.longitude, helperLocation.latitude],
+      ];
+    }
+
+    if (
+      user?.role === UserRole.ABLE &&
+      activeRequest?.status === HelpRequestStatus.ACCEPTED &&
+      activeRequest.requesterLatitude &&
+      activeRequest.requesterLongitude
+    ) {
+      return [
+        [location.longitude, location.latitude],
+        [activeRequest.requesterLongitude, activeRequest.requesterLatitude],
+      ];
+    }
+
+    return null;
+  }, [activeRequest, helperLocation, location, user?.role]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.surface }]}>
-        <Text style={[Typography.h2, { color: colors.text }]}>Map</Text>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View style={styles.header}>
+        <Text style={[Typography.h2, { color: colors.text }]}>Xəritə</Text>
+        <Text style={[Typography.caption, { color: colors.textSecondary }]}>1 km radius • live updates</Text>
       </View>
       
       {location ? (
@@ -76,29 +129,50 @@ export const MapScreen = () => {
               <View style={[styles.marker, { backgroundColor: u.role === UserRole.DISABLED ? colors.mapMarkerDisabled : colors.mapMarkerAble }]} />
             </Mapbox.PointAnnotation>
           ))}
+
+          {/* Route Line */}
+          {routeLine && (
+            <Mapbox.ShapeSource id="routeSource" shape={{
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: routeLine
+              }
+            }}>
+              <Mapbox.LineLayer
+                id="routeFill"
+                style={{
+                  lineColor: colors.primary,
+                  lineWidth: 4,
+                  lineCap: 'round',
+                  lineJoin: 'round',
+                }}
+              />
+            </Mapbox.ShapeSource>
+          )}
         </Mapbox.MapView>
       ) : (
         <View style={styles.loadingContainer}>
           <Text style={[Typography.body, { color: colors.textSecondary }]}>Loading map...</Text>
         </View>
       )}
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
+    padding: 16,
   },
   header: {
-    paddingTop: 50,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 12,
   },
   map: {
     flex: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,

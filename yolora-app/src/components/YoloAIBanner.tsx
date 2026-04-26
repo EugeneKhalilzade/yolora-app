@@ -14,7 +14,7 @@ export const YoloAIBanner: React.FC<YoloAIBannerProps> = ({
   const { colors } = useContext(ThemeContext);
 
   return (
-    <View style={[styles.container, { backgroundColor: '#3B82F6' }]}>
+    <View style={[styles.container, { backgroundColor: colors.primary }]}>
       <View style={styles.header}>
         <Text style={[Typography.caption, { color: 'rgba(255, 255, 255, 0.7)', fontWeight: 'bold', letterSpacing: 0.5 }]}>
           YOLO AI

@@ -1,25 +1,60 @@
-// ──────────────────────────────────────────────
-// Yolora — Firebase Service (Placeholder)
-// ──────────────────────────────────────────────
+import auth from '@react-native-firebase/auth';
 
-// In production, initialize Firebase here:
-// import firebase from '@react-native-firebase/app';
-// import auth from '@react-native-firebase/auth';
-
-// For hackathon MVP, we use direct backend auth.
-// Firebase integration can be added by:
-// 1. Adding google-services.json to android/app/
-// 2. Uncommenting the Firebase imports above
-// 3. Using firebase auth().createUserWithEmailAndPassword()
-// 4. Sending the ID token to backend for verification
+const isFirebaseConfigured = (): boolean => {
+  try {
+    return !!auth().app;
+  } catch {
+    return false;
+  }
+};
 
 export const initializeFirebase = () => {
-  console.log('Firebase: Using backend-direct auth for MVP');
+  if (!isFirebaseConfigured()) {
+    console.warn(
+      'Firebase is not configured. Add google-services.json / GoogleService-Info.plist to enable Firebase auth.',
+    );
+  }
+};
+
+export const registerWithFirebase = async (
+  email: string,
+  password: string,
+): Promise<{ uid: string; idToken: string } | null> => {
+  if (!isFirebaseConfigured()) {
+    return null;
+  }
+
+  const credential = await auth().createUserWithEmailAndPassword(email, password);
+  const uid = credential.user.uid;
+  const idToken = await credential.user.getIdToken();
+  return { uid, idToken };
+};
+
+export const loginWithFirebase = async (
+  email: string,
+  password: string,
+): Promise<{ uid: string; idToken: string } | null> => {
+  if (!isFirebaseConfigured()) {
+    return null;
+  }
+
+  const credential = await auth().signInWithEmailAndPassword(email, password);
+  const uid = credential.user.uid;
+  const idToken = await credential.user.getIdToken();
+  return { uid, idToken };
+};
+
+export const signOutFirebase = async (): Promise<void> => {
+  if (!isFirebaseConfigured()) {
+    return;
+  }
+  await auth().signOut();
 };
 
 export const getFirebaseToken = async (): Promise<string | null> => {
-  // In production:
-  // const user = auth().currentUser;
-  // return user ? await user.getIdToken() : null;
-  return null;
+  if (!isFirebaseConfigured()) {
+    return null;
+  }
+  const user = auth().currentUser;
+  return user ? user.getIdToken() : null;
 };

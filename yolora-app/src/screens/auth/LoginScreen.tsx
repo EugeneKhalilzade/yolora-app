@@ -1,12 +1,14 @@
-import React, { useContext, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import Icon from 'react-native-vector-icons/Ionicons';
 import { ThemeContext } from '../../context/ThemeContext';
 import { AuthContext } from '../../context/AuthContext';
 import { Typography } from '../../theme/typography';
 import { Spacing } from '../../theme/spacing';
 import { Button, Input, Card } from '../../components';
+import { useVoice } from '../../hooks/useVoice';
 
 export const LoginScreen = () => {
   const { colors } = useContext(ThemeContext);
@@ -24,6 +26,28 @@ export const LoginScreen = () => {
     }
   };
 
+  const voiceCommands = useMemo(
+    () => [
+      {
+        keywords: ['login', 'log in', 'daxil ol'],
+        description: 'Submit login form',
+        action: handleLogin,
+      },
+      {
+        keywords: ['register', 'sign up'],
+        description: 'Open register page',
+        action: () => navigation.navigate('Register'),
+      },
+    ],
+    [navigation, handleLogin],
+  );
+
+  const { startListening, speak, isListening } = useVoice(voiceCommands);
+
+  useEffect(() => {
+    speak('You can say Login or Register.');
+  }, [speak]);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <KeyboardAvoidingView
@@ -34,6 +58,22 @@ export const LoginScreen = () => {
           <Text style={[Typography.h2, { color: colors.text, marginBottom: Spacing.xl }]}>
             Welcome Back
           </Text>
+
+          <TouchableOpacity
+            onPress={() => startListening()}
+            style={[
+              styles.voiceButton,
+              { backgroundColor: isListening ? colors.primary : colors.surface, borderColor: colors.border },
+            ]}>
+            <Icon name="mic" size={16} color={isListening ? '#FFFFFF' : colors.primary} />
+            <Text
+              style={[
+                Typography.caption,
+                { marginLeft: 6, color: isListening ? '#FFFFFF' : colors.primary, fontWeight: '700' },
+              ]}>
+              Voice Login
+            </Text>
+          </TouchableOpacity>
           
           <Card elevated>
             <Input
@@ -89,5 +129,15 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: Spacing.xl,
     justifyContent: 'center',
+  },
+  voiceButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: Spacing.md,
   },
 });
