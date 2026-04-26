@@ -3,7 +3,6 @@
 // ──────────────────────────────────────────────
 
 import React, { createContext, useState, useCallback } from 'react';
-import { useColorScheme } from 'react-native';
 import { Colors, ThemeColors } from '../theme/colors';
 
 interface ThemeContextType {
@@ -19,8 +18,7 @@ export const ThemeContext = createContext<ThemeContextType>({
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const systemScheme = useColorScheme();
-  const [isDark, setIsDark] = useState(systemScheme === 'dark');
+  const [isDark, setIsDark] = useState(false);
 
   const toggleTheme = useCallback(() => {
     setIsDark((prev) => !prev);

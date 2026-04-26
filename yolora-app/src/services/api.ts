@@ -2,7 +2,14 @@
 // Yolora — API Service
 // ──────────────────────────────────────────────
 
-import { AuthResponse, HelpRequest, HelpRequestCreated, NearbyUser } from '../types';
+import {
+  AuthResponse,
+  HelpRequest,
+  HelpRequestCreated,
+  NearbyHelpRequest,
+  NearbyUser,
+  UserRole,
+} from '../types';
 
 const BASE_URL = 'http://10.0.2.2:3000'; // Android emulator localhost
 
@@ -23,7 +30,7 @@ const headers = (): Record<string, string> => {
 };
 
 const handleResponse = async (response: Response) => {
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.message || 'Request failed');
   }
@@ -38,11 +45,12 @@ export const apiRegister = async (
   displayName: string,
   role: string,
   disabilityType?: string,
+  firebaseUid?: string,
 ): Promise<AuthResponse> => {
   const response = await fetch(`${BASE_URL}/auth/register`, {
     method: 'POST',
     headers: headers(),
-    body: JSON.stringify({ email, password, displayName, role, disabilityType }),
+    body: JSON.stringify({ email, password, displayName, role, disabilityType, firebaseUid }),
   });
   return handleResponse(response);
 };
@@ -65,12 +73,14 @@ export const apiGetNearbyUsers = async (
   latitude: number,
   longitude: number,
   radius?: number,
+  role?: UserRole,
 ): Promise<NearbyUser[]> => {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
     longitude: longitude.toString(),
   });
   if (radius) params.append('radius', radius.toString());
+  if (role) params.append('role', role);
 
   const response = await fetch(`${BASE_URL}/users/nearby?${params}`, {
     headers: headers(),
@@ -82,11 +92,14 @@ export const apiUpdateLocation = async (
   latitude: number,
   longitude: number,
 ): Promise<void> => {
-  await fetch(`${BASE_URL}/users/location`, {
+  const response = await fetch(`${BASE_URL}/users/location`, {
     method: 'PATCH',
     headers: headers(),
     body: JSON.stringify({ latitude, longitude }),
   });
+  if (!response.ok) {
+    await handleResponse(response);
+  }
 };
 
 // ─── Help Requests ───────────────────────────
@@ -108,7 +121,7 @@ export const apiAcceptHelpRequest = async (
   requestId: string,
   latitude: number,
   longitude: number,
-): Promise<{ helpRequest: HelpRequest; helper: any }> => {
+): Promise<{ helpRequest: HelpRequest; helper: { id: string; displayName: string; latitude: number; longitude: number } }> => {
   const response = await fetch(`${BASE_URL}/help/accept/${requestId}`, {
     method: 'POST',
     headers: headers(),
@@ -118,21 +131,27 @@ export const apiAcceptHelpRequest = async (
 };
 
 export const apiRejectHelpRequest = async (requestId: string): Promise<void> => {
-  await fetch(`${BASE_URL}/help/reject/${requestId}`, {
+  const response = await fetch(`${BASE_URL}/help/reject/${requestId}`, {
     method: 'POST',
     headers: headers(),
   });
+  if (!response.ok) {
+    await handleResponse(response);
+  }
 };
 
 export const apiCompleteHelpRequest = async (
   requestId: string,
   rating?: number,
 ): Promise<void> => {
-  await fetch(`${BASE_URL}/help/complete/${requestId}`, {
+  const response = await fetch(`${BASE_URL}/help/complete/${requestId}`, {
     method: 'POST',
     headers: headers(),
     body: JSON.stringify({ rating }),
   });
+  if (!response.ok) {
+    await handleResponse(response);
+  }
 };
 
 export const apiGetActiveRequest = async (): Promise<HelpRequest | null> => {
@@ -145,7 +164,7 @@ export const apiGetActiveRequest = async (): Promise<HelpRequest | null> => {
 export const apiGetNearbyRequests = async (
   latitude: number,
   longitude: number,
-): Promise<any[]> => {
+): Promise<NearbyHelpRequest[]> => {
   const params = new URLSearchParams({
     latitude: latitude.toString(),
     longitude: longitude.toString(),

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 
 @Injectable()
@@ -10,22 +10,21 @@ export class UsersService {
     private readonly userRepository: Repository<User>,
   ) {}
 
-  /**
-   * Find all able (helper) users within a given radius of a point.
-   * Uses PostGIS ST_DWithin for efficient spatial queries.
-   */
-  async findNearbyAbleUsers(
+  async findNearbyUsers(
     latitude: number,
     longitude: number,
     radiusMeters: number = 1000,
+    role?: UserRole,
+    excludeUserId?: string,
   ): Promise<any[]> {
-    const users = await this.userRepository
+    const qb = this.userRepository
       .createQueryBuilder('user')
       .select([
         'user.id',
         'user.displayName',
         'user.email',
         'user.role',
+        'user.disabilityType',
         'user.latitude',
         'user.longitude',
         'user.isOnline',
@@ -37,8 +36,7 @@ export class UsersService {
         )`,
         'distance',
       )
-      .where('user.role = :role', { role: UserRole.ABLE })
-      .andWhere('user.isOnline = :isOnline', { isOnline: true })
+      .where('user.isOnline = :isOnline', { isOnline: true })
       .andWhere('user.location IS NOT NULL')
       .andWhere(
         `ST_DWithin(
@@ -47,20 +45,37 @@ export class UsersService {
           :radius
         )`,
         { latitude, longitude, radius: radiusMeters },
-      )
-      .orderBy('distance', 'ASC')
-      .getRawMany();
+      );
+
+    if (role) {
+      qb.andWhere('user.role = :role', { role });
+    }
+
+    if (excludeUserId) {
+      qb.andWhere('user.id != :excludeUserId', { excludeUserId });
+    }
+
+    const users = await qb.orderBy('distance', 'ASC').getRawMany();
 
     return users.map((u) => ({
       id: u.user_id,
       displayName: u.user_displayName,
       email: u.user_email,
       role: u.user_role,
+      disabilityType: u.user_disabilityType,
       latitude: u.user_latitude,
       longitude: u.user_longitude,
       isOnline: u.user_isOnline,
       distance: Math.round(parseFloat(u.distance)),
     }));
+  }
+
+  async findNearbyAbleUsers(
+    latitude: number,
+    longitude: number,
+    radiusMeters: number = 1000,
+  ): Promise<any[]> {
+    return this.findNearbyUsers(latitude, longitude, radiusMeters, UserRole.ABLE);
   }
 
   /**
@@ -91,6 +106,15 @@ export class UsersService {
    */
   async findById(userId: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { id: userId } });
+  }
+
+  async findByIds(userIds: string[]): Promise<User[]> {
+    if (!userIds.length) {
+      return [];
+    }
+    return this.userRepository.find({
+      where: { id: In(userIds) },
+    });
   }
 
   /**

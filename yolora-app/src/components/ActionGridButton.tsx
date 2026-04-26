@@ -16,14 +16,14 @@ export const ActionGridButton: React.FC<ActionGridButtonProps> = ({ title, iconN
 
   return (
     <TouchableOpacity 
-      style={[styles.container, { backgroundColor: '#131826', borderColor: '#262D3D' }]} 
+      style={[styles.container, { backgroundColor: colors.surface, borderColor: colors.border }]} 
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <View style={[styles.iconContainer, { backgroundColor: '#1F2937' }]}>
-        <Icon name={iconName} size={22} color={colors.text} />
+      <View style={[styles.iconContainer, { backgroundColor: colors.primary + '15' }]}>
+        <Icon name={iconName} size={22} color={colors.primary} />
       </View>
-      <Text style={[Typography.caption, { color: colors.textSecondary, marginTop: Spacing.md, fontWeight: '500' }]}>
+      <Text style={[Typography.caption, { color: colors.text, marginTop: Spacing.md, fontWeight: '600' }]}>
         {title}
       </Text>
     </TouchableOpacity>

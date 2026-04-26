@@ -1,198 +1,181 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, StyleSheet, Text } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { ThemeContext } from '../../context/ThemeContext';
 import { AuthContext } from '../../context/AuthContext';
-import { UserRole } from '../../types';
-import Geolocation from 'react-native-geolocation-service';
+import { SocketContext } from '../../context/SocketContext';
+import { useLocation } from '../../hooks/useLocation';
+import { apiGetActiveRequest, apiGetNearbyUsers, apiUpdateLocation } from '../../services/api';
+import { HelpRequest, HelpRequestStatus, NearbyUser, UserRole } from '../../types';
 import { Typography } from '../../theme/typography';
-import { Spacing } from '../../theme/spacing';
 
 export const MapScreen = () => {
   const { colors } = useContext(ThemeContext);
   const { user } = useContext(AuthContext);
-  const [location, setLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+  const { helperLocation, userLocations, sendLocationUpdate } = useContext(SocketContext);
+  const { location } = useLocation(true);
+  const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
+  const [activeRequest, setActiveRequest] = useState<HelpRequest | null>(null);
 
   useEffect(() => {
-    // Get current location
-    Geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-      },
-      (error) => {
-        console.log(error.code, error.message);
-        // Fallback to a default location (e.g., Baku, Azerbaijan)
-        setLocation({ latitude: 40.4093, longitude: 49.8671 });
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  }, []);
+    if (!location || !user) {
+      return;
+    }
 
-  // Mock nearby users
-  const nearbyUsers = location ? [
-    { id: '1', latitude: location.latitude + 0.002, longitude: location.longitude + 0.002, role: UserRole.DISABLED },
-    { id: '2', latitude: location.latitude - 0.003, longitude: location.longitude + 0.001, role: UserRole.ABLE },
-    { id: '3', latitude: location.latitude + 0.001, longitude: location.longitude - 0.004, role: UserRole.ABLE },
-  ] : [];
+    const syncMapData = async () => {
+      await apiUpdateLocation(location.latitude, location.longitude);
+      sendLocationUpdate(location);
+
+      const nearby = await apiGetNearbyUsers(
+        location.latitude,
+        location.longitude,
+        1000,
+        user.role === UserRole.DISABLED ? UserRole.ABLE : UserRole.DISABLED,
+      );
+      setNearbyUsers(nearby);
+
+      const currentActiveRequest = await apiGetActiveRequest();
+      setActiveRequest(currentActiveRequest);
+    };
+
+    syncMapData().catch((error) => {
+      console.warn('Failed to sync map data:', error);
+    });
+  }, [location, sendLocationUpdate, user]);
+
+  useEffect(() => {
+    if (!Object.keys(userLocations).length) {
+      return;
+    }
+
+    setNearbyUsers((prev) =>
+      prev.map((nearbyUser) => {
+        const liveLocation = userLocations[nearbyUser.id];
+        if (!liveLocation) {
+          return nearbyUser;
+        }
+        return {
+          ...nearbyUser,
+          latitude: liveLocation.latitude,
+          longitude: liveLocation.longitude,
+        };
+      }),
+    );
+  }, [userLocations]);
+
+  const routeLine = useMemo(() => {
+    if (!location) {
+      return null;
+    }
+
+    if (user?.role === UserRole.DISABLED && helperLocation) {
+      return [
+        { latitude: location.latitude, longitude: location.longitude },
+        helperLocation,
+      ];
+    }
+
+    if (
+      user?.role === UserRole.ABLE &&
+      activeRequest?.status === HelpRequestStatus.ACCEPTED &&
+      activeRequest.requesterLatitude &&
+      activeRequest.requesterLongitude
+    ) {
+      return [
+        { latitude: location.latitude, longitude: location.longitude },
+        {
+          latitude: activeRequest.requesterLatitude,
+          longitude: activeRequest.requesterLongitude,
+        },
+      ];
+    }
+
+    return null;
+  }, [activeRequest, helperLocation, location, user?.role]);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.surface }]}>
-        <Text style={[Typography.h2, { color: colors.text }]}>Map</Text>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <View style={styles.header}>
+        <Text style={[Typography.h2, { color: colors.text }]}>Xəritə</Text>
+        <Text style={[Typography.caption, { color: colors.textSecondary }]}>1 km radius • live updates</Text>
       </View>
-      
-      {location ? (
-        <MapView
-          provider={PROVIDER_GOOGLE}
-          style={styles.map}
-          initialRegion={{
-            latitude: location.latitude,
-            longitude: location.longitude,
-            latitudeDelta: 0.02,
-            longitudeDelta: 0.02,
-          }}
-          showsUserLocation={true}
-          showsMyLocationButton={true}
-          userInterfaceStyle="dark"
-          customMapStyle={mapStyleDark} // Custom dark map style
-        >
-          {/* Self Marker (Optional if showsUserLocation is true, but good for custom styling) */}
-          <Marker
-            coordinate={location}
-            title="You"
-            pinColor={colors.mapMarkerSelf}
-          />
-          
-          {/* Nearby Users */}
-          {nearbyUsers.map(u => (
-            <Marker
-              key={u.id}
-              coordinate={{ latitude: u.latitude, longitude: u.longitude }}
-              title={u.role === UserRole.DISABLED ? "Needs Help" : "Helper"}
-              pinColor={u.role === UserRole.DISABLED ? colors.mapMarkerDisabled : colors.mapMarkerAble}
-            />
-          ))}
-        </MapView>
-      ) : (
-        <View style={styles.loadingContainer}>
-          <Text style={[Typography.body, { color: colors.textSecondary }]}>Loading map...</Text>
-        </View>
-      )}
-    </View>
+
+      <View style={[styles.mapCard, { backgroundColor: colors.surface }]}>
+        {location ? (
+          <MapView
+            provider={PROVIDER_GOOGLE}
+            style={StyleSheet.absoluteFill}
+            initialRegion={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.012,
+              longitudeDelta: 0.012,
+            }}
+            region={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+              latitudeDelta: 0.012,
+              longitudeDelta: 0.012,
+            }}
+            showsUserLocation
+            showsMyLocationButton>
+            <Marker coordinate={location} title="You" pinColor={colors.mapMarkerSelf} />
+            {nearbyUsers.map((nearbyUser) => (
+              <Marker
+                key={nearbyUser.id}
+                coordinate={{ latitude: nearbyUser.latitude, longitude: nearbyUser.longitude }}
+                title={nearbyUser.displayName}
+                description={`${(nearbyUser.distance / 1000).toFixed(1)} km`}
+                pinColor={
+                  nearbyUser.role === UserRole.ABLE
+                    ? colors.mapMarkerAble
+                    : colors.mapMarkerDisabled
+                }
+              />
+            ))}
+
+            {routeLine ? (
+              <Polyline coordinates={routeLine} strokeColor={colors.primary} strokeWidth={4} />
+            ) : null}
+          </MapView>
+        ) : (
+          <View style={styles.loadingContainer}>
+            <Text style={[Typography.body, { color: colors.textSecondary }]}>Loading location...</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={[styles.legendCard, { backgroundColor: colors.surface }]}>
+        <Text style={[Typography.caption, { color: colors.textSecondary }]}>
+          Purple: You • Blue: Helpers • Orange: Disabled users
+        </Text>
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
+    padding: 16,
   },
   header: {
-    paddingTop: 50,
-    paddingBottom: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 12,
   },
-  map: {
+  mapCard: {
     flex: 1,
+    borderRadius: 18,
+    overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-  }
+    justifyContent: 'center',
+  },
+  legendCard: {
+    marginTop: 12,
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+  },
 });
-
-// A basic dark mode style for Google Maps
-const mapStyleDark = [
-  {
-    "elementType": "geometry",
-    "stylers": [{ "color": "#242f3e" }]
-  },
-  {
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#746855" }]
-  },
-  {
-    "elementType": "labels.text.stroke",
-    "stylers": [{ "color": "#242f3e" }]
-  },
-  {
-    "featureType": "administrative.locality",
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#d59563" }]
-  },
-  {
-    "featureType": "poi",
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#d59563" }]
-  },
-  {
-    "featureType": "poi.park",
-    "elementType": "geometry",
-    "stylers": [{ "color": "#263c3f" }]
-  },
-  {
-    "featureType": "poi.park",
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#6b9a76" }]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry",
-    "stylers": [{ "color": "#38414e" }]
-  },
-  {
-    "featureType": "road",
-    "elementType": "geometry.stroke",
-    "stylers": [{ "color": "#212a37" }]
-  },
-  {
-    "featureType": "road",
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#9ca5b3" }]
-  },
-  {
-    "featureType": "road.highway",
-    "elementType": "geometry",
-    "stylers": [{ "color": "#746855" }]
-  },
-  {
-    "featureType": "road.highway",
-    "elementType": "geometry.stroke",
-    "stylers": [{ "color": "#1f2835" }]
-  },
-  {
-    "featureType": "road.highway",
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#f3d19c" }]
-  },
-  {
-    "featureType": "transit",
-    "elementType": "geometry",
-    "stylers": [{ "color": "#2f3948" }]
-  },
-  {
-    "featureType": "transit.station",
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#d59563" }]
-  },
-  {
-    "featureType": "water",
-    "elementType": "geometry",
-    "stylers": [{ "color": "#17263c" }]
-  },
-  {
-    "featureType": "water",
-    "elementType": "labels.text.fill",
-    "stylers": [{ "color": "#515c6d" }]
-  },
-  {
-    "featureType": "water",
-    "elementType": "labels.text.stroke",
-    "stylers": [{ "color": "#17263c" }]
-  }
-];
